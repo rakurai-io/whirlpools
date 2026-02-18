@@ -20,6 +20,8 @@ pub struct TickArray {
     pub whirlpool: Pubkey,
 }
 
+// Note: Pod and Zeroable are already implemented by #[account(zero_copy(unsafe))]
+
 impl Default for TickArray {
     #[inline]
     fn default() -> TickArray {

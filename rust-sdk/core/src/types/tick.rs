@@ -6,6 +6,7 @@ use serde_big_array::BigArray;
 #[cfg(feature = "wasm")]
 use orca_whirlpools_macros::wasm_expose;
 
+use bytemuck::{Pod, Zeroable};
 use crate::TICK_ARRAY_SIZE;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -15,6 +16,7 @@ pub struct TickRange {
     pub tick_upper_index: i32,
 }
 
+#[repr(C, packed)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "wasm", wasm_expose)]
 pub struct TickFacade {
@@ -27,6 +29,10 @@ pub struct TickFacade {
     pub reward_growths_outside: [u128; 3],
 }
 
+unsafe impl Pod for TickFacade {}
+unsafe impl Zeroable for TickFacade {}
+
+#[repr(C, packed)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "wasm", wasm_expose)]
 pub struct TickArrayFacade {
@@ -34,3 +40,6 @@ pub struct TickArrayFacade {
     #[cfg_attr(feature = "wasm", serde(with = "BigArray"))]
     pub ticks: [TickFacade; TICK_ARRAY_SIZE],
 }
+
+unsafe impl Pod for TickArrayFacade {}
+unsafe impl Zeroable for TickArrayFacade {}

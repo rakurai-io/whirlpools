@@ -7,6 +7,7 @@ use crate::{
 };
 use anchor_lang::prelude::*;
 use bitflags::bitflags;
+use bytemuck::{Pod, Zeroable};
 
 use super::WhirlpoolsConfig;
 
@@ -53,6 +54,8 @@ pub struct Whirlpool {
 
     pub reward_infos: [WhirlpoolRewardInfo; NUM_REWARDS], // 384
 }
+
+// Note: For deserialization with bytemuck, use the account data after the 8-byte discriminator
 
 // Number of rewards supported by Whirlpools
 pub const NUM_REWARDS: usize = 3;
@@ -336,6 +339,7 @@ impl Whirlpool {
 /// and `Whirlpool.reward_last_updated_timestamp` to determine how many rewards are earned by open
 /// positions.
 #[derive(Copy, Clone, AnchorSerialize, AnchorDeserialize, Default, Debug, PartialEq)]
+#[repr(C)]
 pub struct WhirlpoolRewardInfo {
     /// Reward token mint.
     pub mint: Pubkey,
@@ -355,6 +359,9 @@ pub struct WhirlpoolRewardInfo {
     /// emissions were turned on.
     pub growth_global_x64: u128,
 }
+
+unsafe impl Pod for WhirlpoolRewardInfo {}
+unsafe impl Zeroable for WhirlpoolRewardInfo {}
 
 impl WhirlpoolRewardInfo {
     /// Creates a new `WhirlpoolRewardInfo` with the extension set
@@ -392,18 +399,26 @@ bitflags! {
     }
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Copy, Clone, AnchorSerialize, AnchorDeserialize, Debug, PartialEq)]
+#[repr(C)]
 pub struct WhirlpoolExtensionSegmentPrimary {
     // total length must be 32 bytes
     pub control_flags: u16,
     pub reserved: [u8; 30],
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq)]
+unsafe impl Pod for WhirlpoolExtensionSegmentPrimary {}
+unsafe impl Zeroable for WhirlpoolExtensionSegmentPrimary {}
+
+#[derive(Copy, Clone, AnchorSerialize, AnchorDeserialize, Debug, PartialEq)]
+#[repr(C)]
 pub struct WhirlpoolExtensionSegmentSecondary {
     // total length must be 32 bytes
     pub reserved: [u8; 32],
 }
+
+unsafe impl Pod for WhirlpoolExtensionSegmentSecondary {}
+unsafe impl Zeroable for WhirlpoolExtensionSegmentSecondary {}
 
 impl WhirlpoolExtensionSegmentPrimary {
     pub fn to_bytes(&self) -> [u8; 32] {
@@ -441,10 +456,14 @@ impl WhirlpoolExtensionSegmentSecondary {
     }
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default, Copy)]
+#[derive(Copy, Clone, AnchorSerialize, AnchorDeserialize, Default)]
+#[repr(C)]
 pub struct WhirlpoolBumps {
     pub whirlpool_bump: u8,
 }
+
+unsafe impl Pod for WhirlpoolBumps {}
+unsafe impl Zeroable for WhirlpoolBumps {}
 
 #[test]
 fn test_whirlpool_reward_info_not_initialized() {

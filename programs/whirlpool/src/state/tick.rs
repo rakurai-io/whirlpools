@@ -24,6 +24,8 @@ pub struct Tick {
     pub reward_growths_outside: [u128; NUM_REWARDS], // 48 = 16 * 3
 }
 
+// Note: Pod and Zeroable are already implemented by #[zero_copy(unsafe)]
+
 impl From<TickUpdate> for Tick {
     fn from(update: TickUpdate) -> Self {
         Tick {

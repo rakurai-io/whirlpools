@@ -25,6 +25,7 @@ floats = ["dep:libm"]
 swap = []
 
 [dependencies]
+bytemuck = { version = "1.14.0", features = ["derive"] }
 ethnum = { version = "^1.1" }
 libm = { version = ">=0.1, <0.3", optional = true }
 orca_whirlpools_macros = { path = "../macros" }
