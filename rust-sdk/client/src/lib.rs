@@ -16,6 +16,10 @@ pub use generated::programs::WHIRLPOOL_ID as ID;
 pub use generated::programs::*;
 pub use generated::types::*;
 
+// Type aliases for backward compatibility
+pub use generated::accounts::FixedTickArray as TickArray;
+pub use generated::types::Tick;
+
 #[cfg(feature = "fetch")]
 pub use generated::shared::*;
 
