@@ -11,8 +11,9 @@ use borsh::BorshSerialize;
 use borsh::BorshDeserialize;
 
 
-#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
 pub struct Whirlpool {
 pub discriminator: [u8; 8],
 #[cfg_attr(feature = "serde", serde(with = "serde_with::As::<serde_with::DisplayFromStr>"))]
@@ -40,6 +41,9 @@ pub fee_growth_global_b: u128,
 pub reward_last_updated_timestamp: u64,
 pub reward_infos: [WhirlpoolRewardInfo; 3],
 }
+
+unsafe impl bytemuck::Pod for Whirlpool {}
+unsafe impl bytemuck::Zeroable for Whirlpool {}
 
 
 impl Whirlpool {

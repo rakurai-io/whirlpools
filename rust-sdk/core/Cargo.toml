@@ -17,6 +17,7 @@ wasm = ["dep:wasm-bindgen", "dep:serde", "dep:serde-big-array", "dep:serde-wasm-
 floats = ["dep:libm"]
 
 [dependencies]
+bytemuck = { version = "^1.14", features = ["derive"] }
 ethnum = { version = "^1.1" }
 libm = { version = ">=0.1, <0.3", optional = true }
 orca_whirlpools_macros = { path = "../macros" }

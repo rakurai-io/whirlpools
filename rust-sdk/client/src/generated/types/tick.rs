@@ -8,8 +8,9 @@
 use borsh::BorshSerialize;
 use borsh::BorshDeserialize;
 
-#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
 pub struct Tick {
 pub initialized: bool,
 pub liquidity_net: i128,
@@ -19,4 +20,6 @@ pub fee_growth_outside_b: u128,
 pub reward_growths_outside: [u128; 3],
 }
 
+unsafe impl bytemuck::Pod for Tick {}
+unsafe impl bytemuck::Zeroable for Tick {}
 

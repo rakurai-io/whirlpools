@@ -11,8 +11,9 @@ use borsh::BorshSerialize;
 use borsh::BorshDeserialize;
 
 
-#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
 pub struct FixedTickArray {
 pub discriminator: [u8; 8],
 pub start_tick_index: i32,
@@ -21,6 +22,9 @@ pub ticks: [Tick; 88],
 #[cfg_attr(feature = "serde", serde(with = "serde_with::As::<serde_with::DisplayFromStr>"))]
 pub whirlpool: Pubkey,
 }
+
+unsafe impl bytemuck::Pod for FixedTickArray {}
+unsafe impl bytemuck::Zeroable for FixedTickArray {}
 
 
 impl FixedTickArray {

@@ -13,8 +13,9 @@ use borsh::BorshDeserialize;
 /// These values are used in conjunction with `PositionRewardInfo`, `Tick.reward_growths_outside`,
 /// and `Whirlpool.reward_last_updated_timestamp` to determine how many rewards are earned by open
 /// positions.
-#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
 pub struct WhirlpoolRewardInfo {
 /// Reward token mint.
 #[cfg_attr(feature = "serde", serde(with = "serde_with::As::<serde_with::DisplayFromStr>"))]
@@ -37,4 +38,6 @@ pub emissions_per_second_x64: u128,
 pub growth_global_x64: u128,
 }
 
+unsafe impl bytemuck::Pod for WhirlpoolRewardInfo {}
+unsafe impl bytemuck::Zeroable for WhirlpoolRewardInfo {}
 

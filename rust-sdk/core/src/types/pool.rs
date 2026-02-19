@@ -7,6 +7,7 @@ use orca_whirlpools_macros::wasm_expose;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "wasm", wasm_expose)]
+#[repr(C)]
 pub struct WhirlpoolFacade {
     pub tick_spacing: u16,
     pub fee_rate: u16,
@@ -21,9 +22,16 @@ pub struct WhirlpoolFacade {
     pub reward_infos: [WhirlpoolRewardInfoFacade; NUM_REWARDS],
 }
 
+unsafe impl bytemuck::Pod for WhirlpoolFacade {}
+unsafe impl bytemuck::Zeroable for WhirlpoolFacade {}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "wasm", wasm_expose)]
+#[repr(C)]
 pub struct WhirlpoolRewardInfoFacade {
     pub emissions_per_second_x64: u128,
     pub growth_global_x64: u128,
 }
+
+unsafe impl bytemuck::Pod for WhirlpoolRewardInfoFacade {}
+unsafe impl bytemuck::Zeroable for WhirlpoolRewardInfoFacade {}

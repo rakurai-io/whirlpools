@@ -17,6 +17,7 @@ pub struct TickRange {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "wasm", wasm_expose)]
+#[repr(C)]
 pub struct TickFacade {
     pub initialized: bool,
     pub liquidity_net: i128,
@@ -27,10 +28,17 @@ pub struct TickFacade {
     pub reward_growths_outside: [u128; 3],
 }
 
+unsafe impl bytemuck::Pod for TickFacade {}
+unsafe impl bytemuck::Zeroable for TickFacade {}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "wasm", wasm_expose)]
+#[repr(C)]
 pub struct TickArrayFacade {
     pub start_tick_index: i32,
     #[cfg_attr(feature = "wasm", serde(with = "BigArray"))]
     pub ticks: [TickFacade; TICK_ARRAY_SIZE],
 }
+
+unsafe impl bytemuck::Pod for TickArrayFacade {}
+unsafe impl bytemuck::Zeroable for TickArrayFacade {}
