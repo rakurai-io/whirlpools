@@ -15,7 +15,7 @@ use borsh::BorshDeserialize;
 /// positions.
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
+#[repr(C, packed)]
 pub struct WhirlpoolRewardInfo {
 /// Reward token mint.
 #[cfg_attr(feature = "serde", serde(with = "serde_with::As::<serde_with::DisplayFromStr>"))]

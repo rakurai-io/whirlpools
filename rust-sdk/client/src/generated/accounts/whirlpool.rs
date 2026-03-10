@@ -13,7 +13,7 @@ use borsh::BorshDeserialize;
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
+#[repr(C, packed)]
 pub struct Whirlpool {
 pub discriminator: [u8; 8],
 #[cfg_attr(feature = "serde", serde(with = "serde_with::As::<serde_with::DisplayFromStr>"))]
