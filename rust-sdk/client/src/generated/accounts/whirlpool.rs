@@ -11,7 +11,7 @@ use borsh::BorshSerialize;
 use borsh::BorshDeserialize;
 
 
-#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Eq, PartialEq, Copy)]
+#[derive(Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C, packed)]
 pub struct Whirlpool {
@@ -44,6 +44,36 @@ pub reward_infos: [WhirlpoolRewardInfo; 3],
 
 unsafe impl bytemuck::Pod for Whirlpool {}
 unsafe impl bytemuck::Zeroable for Whirlpool {}
+
+impl BorshSerialize for Whirlpool {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(bytemuck::bytes_of(self))
+    }
+}
+
+impl BorshDeserialize for Whirlpool {
+    fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
+        if buf.len() < Self::LEN {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Insufficient buffer length",
+            ));
+        }
+        let (data, rest) = buf.split_at(Self::LEN);
+        *buf = rest;
+        bytemuck::try_from_bytes(data)
+            .map(|x| *x)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{:?}", e)))
+    }
+
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = vec![0u8; Self::LEN];
+        reader.read_exact(&mut buf)?;
+        bytemuck::try_from_bytes(&buf)
+            .map(|x| *x)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{:?}", e)))
+    }
+}
 
 
 impl Whirlpool {
