@@ -13,9 +13,11 @@ use borsh::BorshDeserialize;
 /// These values are used in conjunction with `PositionRewardInfo`, `Tick.reward_growths_outside`,
 /// and `Whirlpool.reward_last_updated_timestamp` to determine how many rewards are earned by open
 /// positions.
+#[cfg_attr(not(feature = "bytemuck"), derive(BorshSerialize, BorshDeserialize))]
 #[derive(Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C, packed)]
+#[cfg_attr(feature = "bytemuck", repr(C, packed))]
+#[cfg_attr(not(feature = "bytemuck"), repr(C))]
 pub struct WhirlpoolRewardInfo {
 /// Reward token mint.
 #[cfg_attr(feature = "serde", serde(with = "serde_with::As::<serde_with::DisplayFromStr>"))]
@@ -38,15 +40,20 @@ pub emissions_per_second_x64: u128,
 pub growth_global_x64: u128,
 }
 
+#[cfg(feature = "bytemuck")]
 unsafe impl bytemuck::Pod for WhirlpoolRewardInfo {}
+
+#[cfg(feature = "bytemuck")]
 unsafe impl bytemuck::Zeroable for WhirlpoolRewardInfo {}
 
+#[cfg(feature = "bytemuck")]
 impl BorshSerialize for WhirlpoolRewardInfo {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(bytemuck::bytes_of(self))
     }
 }
 
+#[cfg(feature = "bytemuck")]
 impl BorshDeserialize for WhirlpoolRewardInfo {
     fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
         const LEN: usize = std::mem::size_of::<WhirlpoolRewardInfo>();

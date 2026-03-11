@@ -11,9 +11,11 @@ use borsh::BorshSerialize;
 use borsh::BorshDeserialize;
 
 
+#[cfg_attr(not(feature = "bytemuck"), derive(BorshSerialize, BorshDeserialize))]
 #[derive(Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C, packed)]
+#[cfg_attr(feature = "bytemuck", repr(C, packed))]
+#[cfg_attr(not(feature = "bytemuck"), repr(C))]
 pub struct FixedTickArray {
 pub discriminator: [u8; 8],
 pub start_tick_index: i32,
@@ -23,15 +25,20 @@ pub ticks: [Tick; 88],
 pub whirlpool: Pubkey,
 }
 
+#[cfg(feature = "bytemuck")]
 unsafe impl bytemuck::Pod for FixedTickArray {}
+
+#[cfg(feature = "bytemuck")]
 unsafe impl bytemuck::Zeroable for FixedTickArray {}
 
+#[cfg(feature = "bytemuck")]
 impl BorshSerialize for FixedTickArray {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(bytemuck::bytes_of(self))
     }
 }
 
+#[cfg(feature = "bytemuck")]
 impl BorshDeserialize for FixedTickArray {
     fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
         if buf.len() < Self::LEN {

@@ -8,9 +8,11 @@
 use borsh::BorshSerialize;
 use borsh::BorshDeserialize;
 
+#[cfg_attr(not(feature = "bytemuck"), derive(BorshSerialize, BorshDeserialize))]
 #[derive(Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C, packed)]
+#[cfg_attr(feature = "bytemuck", repr(C, packed))]
+#[cfg_attr(not(feature = "bytemuck"), repr(C))]
 pub struct Tick {
 pub initialized: bool,
 pub liquidity_net: i128,
@@ -20,15 +22,20 @@ pub fee_growth_outside_b: u128,
 pub reward_growths_outside: [u128; 3],
 }
 
+#[cfg(feature = "bytemuck")]
 unsafe impl bytemuck::Pod for Tick {}
+
+#[cfg(feature = "bytemuck")]
 unsafe impl bytemuck::Zeroable for Tick {}
 
+#[cfg(feature = "bytemuck")]
 impl BorshSerialize for Tick {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(bytemuck::bytes_of(self))
     }
 }
 
+#[cfg(feature = "bytemuck")]
 impl BorshDeserialize for Tick {
     fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
         const LEN: usize = std::mem::size_of::<Tick>();

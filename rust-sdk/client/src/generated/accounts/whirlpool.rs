@@ -11,9 +11,11 @@ use borsh::BorshSerialize;
 use borsh::BorshDeserialize;
 
 
+#[cfg_attr(not(feature = "bytemuck"), derive(BorshSerialize, BorshDeserialize))]
 #[derive(Clone, Debug, Eq, PartialEq, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C, packed)]
+#[cfg_attr(feature = "bytemuck", repr(C, packed))]
+#[cfg_attr(not(feature = "bytemuck"), repr(C))]
 pub struct Whirlpool {
 pub discriminator: [u8; 8],
 #[cfg_attr(feature = "serde", serde(with = "serde_with::As::<serde_with::DisplayFromStr>"))]
@@ -42,15 +44,20 @@ pub reward_last_updated_timestamp: u64,
 pub reward_infos: [WhirlpoolRewardInfo; 3],
 }
 
+#[cfg(feature = "bytemuck")]
 unsafe impl bytemuck::Pod for Whirlpool {}
+
+#[cfg(feature = "bytemuck")]
 unsafe impl bytemuck::Zeroable for Whirlpool {}
 
+#[cfg(feature = "bytemuck")]
 impl BorshSerialize for Whirlpool {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(bytemuck::bytes_of(self))
     }
 }
 
+#[cfg(feature = "bytemuck")]
 impl BorshDeserialize for Whirlpool {
     fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
         if buf.len() < Self::LEN {
