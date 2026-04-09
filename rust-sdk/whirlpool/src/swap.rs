@@ -252,6 +252,8 @@ pub async fn swap_instructions(
 
     let quote = match swap_type {
         SwapType::ExactIn => SwapQuote::ExactIn(swap_quote_by_input_token(
+            whirlpool.sqrt_price,
+            whirlpool.liquidity,
             amount,
             specified_token_a,
             slippage_tolerance_bps,
@@ -263,6 +265,8 @@ pub async fn swap_instructions(
             transfer_fee_b,
         )?),
         SwapType::ExactOut => SwapQuote::ExactOut(swap_quote_by_output_token(
+            whirlpool.sqrt_price,
+            whirlpool.liquidity,
             amount,
             specified_token_a,
             slippage_tolerance_bps,
