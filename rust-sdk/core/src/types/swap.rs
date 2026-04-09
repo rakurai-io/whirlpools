@@ -13,6 +13,8 @@ pub struct ExactInSwapQuote {
     pub trade_fee: u64,
     pub trade_fee_rate_min: u32,
     pub trade_fee_rate_max: u32,
+    pub next_sqrt_price: u128,
+    pub next_liquidity: u128,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -25,4 +27,6 @@ pub struct ExactOutSwapQuote {
     pub trade_fee: u64,
     pub trade_fee_rate_min: u32,
     pub trade_fee_rate_max: u32,
+    pub next_sqrt_price: u128,
+    pub next_liquidity: u128,
 }

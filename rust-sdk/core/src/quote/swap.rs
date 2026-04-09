@@ -31,6 +31,8 @@ use orca_whirlpools_macros::wasm_expose;
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(feature = "wasm", wasm_expose)]
 pub fn swap_quote_by_input_token(
+    current_price: u128,
+    current_liquidity: u128,
     token_in: u64,
     specified_token_a: bool,
     slippage_tolerance_bps: u16,
@@ -52,6 +54,8 @@ pub fn swap_quote_by_input_token(
     let tick_sequence = TickArraySequence::new(tick_arrays.into(), whirlpool.tick_spacing)?;
 
     let swap_result = compute_swap(
+        current_price,
+        current_liquidity,
         token_in_after_fee.into(),
         0,
         whirlpool,
@@ -86,6 +90,8 @@ pub fn swap_quote_by_input_token(
         trade_fee: swap_result.trade_fee,
         trade_fee_rate_min: swap_result.applied_fee_rate_min,
         trade_fee_rate_max: swap_result.applied_fee_rate_max,
+        next_sqrt_price: swap_result.next_sqrt_price,
+        next_liquidity: swap_result.next_liquidity,
     })
 }
 
@@ -107,6 +113,8 @@ pub fn swap_quote_by_input_token(
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(feature = "wasm", wasm_expose)]
 pub fn swap_quote_by_output_token(
+    current_price: u128,
+    current_liquidity: u128,
     token_out: u64,
     specified_token_a: bool,
     slippage_tolerance_bps: u16,
@@ -128,6 +136,8 @@ pub fn swap_quote_by_output_token(
     let tick_sequence = TickArraySequence::new(tick_arrays.into(), whirlpool.tick_spacing)?;
 
     let swap_result = compute_swap(
+        current_price,
+        current_liquidity,
         token_out_before_fee.into(),
         0,
         whirlpool,
@@ -143,7 +153,7 @@ pub fn swap_quote_by_output_token(
     } else {
         (swap_result.token_b, swap_result.token_a)
     };
-
+    
     let token_out =
         try_apply_transfer_fee(token_out_before_fee, transfer_fee_out.unwrap_or_default())?;
 
@@ -162,6 +172,8 @@ pub fn swap_quote_by_output_token(
         trade_fee: swap_result.trade_fee,
         trade_fee_rate_min: swap_result.applied_fee_rate_min,
         trade_fee_rate_max: swap_result.applied_fee_rate_max,
+        next_sqrt_price: swap_result.next_sqrt_price,
+        next_liquidity: swap_result.next_liquidity,
     })
 }
 
@@ -171,6 +183,8 @@ pub struct SwapResult {
     pub trade_fee: u64,
     pub applied_fee_rate_min: u32,
     pub applied_fee_rate_max: u32,
+    pub next_sqrt_price: u128,
+    pub next_liquidity: u128,
 }
 
 /// Computes the amounts of tokens A and B based on the current Whirlpool state and tick sequence.
@@ -196,6 +210,8 @@ pub struct SwapResult {
 /// - This function doesn't take into account transfer fee extension.
 #[allow(clippy::too_many_arguments)]
 pub fn compute_swap<const SIZE: usize>(
+    current_price: u128,
+    current_liquidity: u128,
     token_amount: u64,
     sqrt_price_limit: u128,
     whirlpool: WhirlpoolFacade,
@@ -231,10 +247,12 @@ pub fn compute_swap<const SIZE: usize>(
 
     let mut amount_remaining = token_amount;
     let mut amount_calculated = 0u64;
-    let mut current_sqrt_price = whirlpool.sqrt_price;
+    let mut current_sqrt_price = current_price;
     let mut current_tick_index = whirlpool.tick_current_index;
-    let mut current_liquidity = whirlpool.liquidity;
+    let mut current_liquidity = current_liquidity;
     let mut trade_fee = 0u64;
+
+    let mut next_liquidity = current_liquidity;
 
     let base_fee_rate = whirlpool.fee_rate;
     let mut applied_fee_rate_min: Option<u32> = None;
@@ -317,6 +335,7 @@ pub fn compute_swap<const SIZE: usize>(
 
             if step_quote.next_sqrt_price == next_tick_sqrt_price {
                 current_liquidity = get_next_liquidity(current_liquidity, next_tick, a_to_b);
+                next_liquidity = current_liquidity;
                 current_tick_index = if a_to_b {
                     next_tick_index - 1
                 } else {
@@ -371,6 +390,8 @@ pub fn compute_swap<const SIZE: usize>(
         trade_fee,
         applied_fee_rate_min: applied_fee_rate_min.unwrap_or(base_fee_rate as u32),
         applied_fee_rate_max: applied_fee_rate_max.unwrap_or(base_fee_rate as u32),
+        next_sqrt_price: current_sqrt_price,
+        next_liquidity: next_liquidity,
     })
 }
 
