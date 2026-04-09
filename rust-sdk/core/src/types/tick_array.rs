@@ -133,6 +133,58 @@ impl From<TickArrays> for [Option<TickArrayFacade>; 6] {
 }
 
 #[cfg(not(feature = "wasm"))]
+impl From<TickArrays> for Vec<Option<TickArrayFacade>> {
+    fn from(val: TickArrays) -> Self {
+        match val {
+            TickArrays::One(tick_array) => vec![Some(tick_array)],
+            TickArrays::Two(tick_array_1, tick_array_2) => vec![
+                Some(tick_array_1),
+                Some(tick_array_2),
+            ],
+            TickArrays::Three(tick_array_1, tick_array_2, tick_array_3) => vec![
+                Some(tick_array_1),
+                Some(tick_array_2),
+                Some(tick_array_3),
+            ],
+            TickArrays::Four(tick_array_1, tick_array_2, tick_array_3, tick_array_4) => vec![
+                Some(tick_array_1),
+                Some(tick_array_2),
+                Some(tick_array_3),
+                Some(tick_array_4),
+            ],
+            TickArrays::Five(
+                tick_array_1,
+                tick_array_2,
+                tick_array_3,
+                tick_array_4,
+                tick_array_5,
+            ) => vec![
+                Some(tick_array_1),
+                Some(tick_array_2),
+                Some(tick_array_3),
+                Some(tick_array_4),
+                Some(tick_array_5),
+            ],
+            TickArrays::Six(
+                tick_array_1,
+                tick_array_2,
+                tick_array_3,
+                tick_array_4,
+                tick_array_5,
+                tick_array_6,
+            ) => vec![
+                Some(tick_array_1),
+                Some(tick_array_2),
+                Some(tick_array_3),
+                Some(tick_array_4),
+                Some(tick_array_5),
+                Some(tick_array_6),
+            ],
+        }
+    }
+}
+
+#[cfg(not(feature = "wasm"))]
 impl From<TickArrayFacade> for TickArrays {
     fn from(val: TickArrayFacade) -> Self {
         TickArrays::One(val)
