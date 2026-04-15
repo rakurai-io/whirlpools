@@ -18,8 +18,8 @@ use orca_whirlpools_macros::wasm_expose;
 /// # Arguments
 /// - `token_in`: The input token amount.
 /// - `specified_token_a`: If `true`, the input token is token A. Otherwise, it is token B.
-/// - `slippage_tolerance`: The slippage tolerance in basis points.
-/// - `whirlpool`: The whirlpool state.
+/// - `slippage_tolerance_bps`: The slippage tolerance in basis points.
+/// - `whirlpool`: The whirlpool state (sqrt price and liquidity are read from here).
 /// - `oracle`: The oracle data for the whirlpool.
 /// - `tick_arrays`: The tick arrays needed for the swap.
 /// - `timestamp`: The timestamp for the swap.
@@ -31,8 +31,6 @@ use orca_whirlpools_macros::wasm_expose;
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(feature = "wasm", wasm_expose)]
 pub fn swap_quote_by_input_token(
-    current_price: u128,
-    current_liquidity: u128,
     token_in: u64,
     specified_token_a: bool,
     slippage_tolerance_bps: u16,
@@ -54,8 +52,6 @@ pub fn swap_quote_by_input_token(
     let tick_sequence = TickArraySequence::new(tick_arrays.into(), whirlpool.tick_spacing)?;
 
     let swap_result = compute_swap(
-        current_price,
-        current_liquidity,
         token_in_after_fee.into(),
         0,
         whirlpool,
@@ -100,8 +96,8 @@ pub fn swap_quote_by_input_token(
 /// # Arguments
 /// - `token_out`: The output token amount.
 /// - `specified_token_a`: If `true`, the output token is token A. Otherwise, it is token B.
-/// - `slippage_tolerance`: The slippage tolerance in basis points.
-/// - `whirlpool`: The whirlpool state.
+/// - `slippage_tolerance_bps`: The slippage tolerance in basis points.
+/// - `whirlpool`: The whirlpool state (sqrt price and liquidity are read from here).
 /// - `oracle`: The oracle data for the whirlpool.
 /// - `tick_arrays`: The tick arrays needed for the swap.
 /// - `timestamp`: The timestamp for the swap.
@@ -113,8 +109,6 @@ pub fn swap_quote_by_input_token(
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(feature = "wasm", wasm_expose)]
 pub fn swap_quote_by_output_token(
-    current_price: u128,
-    current_liquidity: u128,
     token_out: u64,
     specified_token_a: bool,
     slippage_tolerance_bps: u16,
@@ -136,8 +130,6 @@ pub fn swap_quote_by_output_token(
     let tick_sequence = TickArraySequence::new(tick_arrays.into(), whirlpool.tick_spacing)?;
 
     let swap_result = compute_swap(
-        current_price,
-        current_liquidity,
         token_out_before_fee.into(),
         0,
         whirlpool,
@@ -210,8 +202,6 @@ pub struct SwapResult {
 /// - This function doesn't take into account transfer fee extension.
 #[allow(clippy::too_many_arguments)]
 pub fn compute_swap(
-    current_price: u128,
-    current_liquidity: u128,
     token_amount: u64,
     sqrt_price_limit: u128,
     whirlpool: WhirlpoolFacade,
@@ -247,9 +237,9 @@ pub fn compute_swap(
 
     let mut amount_remaining = token_amount;
     let mut amount_calculated = 0u64;
-    let mut current_sqrt_price = current_price;
+    let mut current_sqrt_price = whirlpool.sqrt_price;
     let mut current_tick_index = whirlpool.tick_current_index;
-    let mut current_liquidity = current_liquidity;
+    let mut current_liquidity = whirlpool.liquidity;
     let mut trade_fee = 0u64;
 
     let mut next_liquidity = current_liquidity;
@@ -270,7 +260,10 @@ pub fn compute_swap(
         &adaptive_fee_info,
     )?;
 
+    let mut outer_iteration = 0;
     while amount_remaining > 0 && sqrt_price_limit != current_sqrt_price {
+        outer_iteration += 1;
+        
         let (next_tick, next_tick_index) = if a_to_b {
             tick_sequence.prev_initialized_tick(current_tick_index)?
         } else {
@@ -283,7 +276,11 @@ pub fn compute_swap(
             next_tick_sqrt_price.min(sqrt_price_limit)
         };
 
+
+        let mut inner_iteration = 0;
         loop {
+            inner_iteration += 1;
+            
             fee_rate_manager.update_volatility_accumulator();
 
             let total_fee_rate = fee_rate_manager.get_total_fee_rate();
@@ -298,8 +295,10 @@ pub fn compute_swap(
                     .max(total_fee_rate),
             );
 
+
             let (bounded_sqrt_price_target, adaptive_fee_update_skipped) = fee_rate_manager
                 .get_bounded_sqrt_price_target(target_sqrt_price, current_liquidity);
+
 
             let step_quote = compute_swap_step(
                 amount_remaining,
@@ -310,6 +309,7 @@ pub fn compute_swap(
                 a_to_b,
                 specified_input,
             )?;
+
 
             trade_fee += step_quote.fee_amount;
 
@@ -333,6 +333,7 @@ pub fn compute_swap(
                     .ok_or(ARITHMETIC_OVERFLOW)?;
             }
 
+
             if step_quote.next_sqrt_price == next_tick_sqrt_price {
                 current_liquidity = get_next_liquidity(current_liquidity, next_tick, a_to_b);
                 next_liquidity = current_liquidity;
@@ -340,7 +341,7 @@ pub fn compute_swap(
                     next_tick_index - 1
                 } else {
                     next_tick_index
-                }
+                };
             } else if step_quote.next_sqrt_price != current_sqrt_price {
                 current_tick_index =
                     sqrt_price_to_tick_index(step_quote.next_sqrt_price.into()).into();
@@ -383,6 +384,7 @@ pub fn compute_swap(
         whirlpool.sqrt_price,
         current_sqrt_price,
     );
+
 
     Ok(SwapResult {
         token_a,

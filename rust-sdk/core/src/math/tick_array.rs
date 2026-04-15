@@ -22,26 +22,36 @@ impl TickArraySequence {
     ) -> Result<Self, CoreError> {
         let mut tick_arrays = tick_arrays;
         tick_arrays.sort_by_key(start_tick_index);
-
-        if tick_arrays.is_empty() || tick_arrays[0].is_none() {
-            return Err(TICK_SEQUENCE_EMPTY);
-        }
-
-        let required_tick_array_spacing = TICK_ARRAY_SIZE as i32 * tick_spacing as i32;
-        for i in 0..tick_arrays.len() - 1 {
-            let current_start_tick_index = start_tick_index(&tick_arrays[i]);
-            let next_start_tick_index = start_tick_index(&tick_arrays[i + 1]);
-            if next_start_tick_index != <i32>::MAX
-                && next_start_tick_index - current_start_tick_index != required_tick_array_spacing
-            {
-                return Err(TICK_ARRAY_NOT_EVENLY_SPACED);
-            }
-        }
-
+        validate_evenly_spaced_non_empty(&tick_arrays, tick_spacing)?;
         Ok(Self {
             tick_arrays,
             tick_spacing,
         })
+    }
+
+    /// Insert or replace tick arrays by `start_tick_index`, then sort and validate spacing (same rules as `new`).
+    pub fn add_new_tick_arrays(
+        &mut self,
+        new_arrays: impl IntoIterator<Item = TickArrayFacade>,
+    ) -> Result<(), CoreError> {
+        for facade in new_arrays {
+            let start = facade.start_tick_index;
+            let mut replaced = false;
+            for slot in &mut self.tick_arrays {
+                if let Some(existing) = slot {
+                    if existing.start_tick_index == start {
+                        *existing = facade;
+                        replaced = true;
+                        break;
+                    }
+                }
+            }
+            if !replaced {
+                self.tick_arrays.push(Some(facade));
+            }
+        }
+        self.tick_arrays.sort_by_key(start_tick_index);
+        validate_evenly_spaced_non_empty(&self.tick_arrays, self.tick_spacing)
     }
 
     /// Returns the first valid tick index in the sequence.
@@ -126,6 +136,27 @@ impl TickArraySequence {
 }
 
 // internal functions
+
+fn validate_evenly_spaced_non_empty(
+    tick_arrays: &[Option<TickArrayFacade>],
+    tick_spacing: u16,
+) -> Result<(), CoreError> {
+    if tick_arrays.is_empty() || tick_arrays[0].is_none() {
+        return Err(TICK_SEQUENCE_EMPTY);
+    }
+
+    let required_tick_array_spacing = TICK_ARRAY_SIZE as i32 * tick_spacing as i32;
+    for i in 0..tick_arrays.len() - 1 {
+        let current_start_tick_index = start_tick_index(&tick_arrays[i]);
+        let next_start_tick_index = start_tick_index(&tick_arrays[i + 1]);
+        if next_start_tick_index != <i32>::MAX
+            && next_start_tick_index - current_start_tick_index != required_tick_array_spacing
+        {
+            return Err(TICK_ARRAY_NOT_EVENLY_SPACED);
+        }
+    }
+    Ok(())
+}
 
 fn start_tick_index(tick_array: &Option<TickArrayFacade>) -> i32 {
     if let Some(tick_array) = tick_array {
