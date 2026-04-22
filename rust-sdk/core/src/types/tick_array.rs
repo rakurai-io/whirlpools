@@ -184,6 +184,14 @@ impl From<TickArrays> for Vec<Option<TickArrayFacade>> {
     }
 }
 
+#[cfg(feature = "wasm")]
+impl From<TickArrays> for Vec<Option<TickArrayFacade>> {
+    fn from(val: TickArrays) -> Self {
+        let arr: [Option<TickArrayFacade>; 6] = val.into();
+        arr.into_iter().collect()
+    }
+}
+
 #[cfg(not(feature = "wasm"))]
 impl From<TickArrayFacade> for TickArrays {
     fn from(val: TickArrayFacade) -> Self {

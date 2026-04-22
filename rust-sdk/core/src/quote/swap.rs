@@ -49,7 +49,8 @@ pub fn swap_quote_by_input_token(
     let token_in_after_fee =
         try_apply_transfer_fee(token_in.into(), transfer_fee_in.unwrap_or_default())?;
 
-    let tick_sequence = TickArraySequence::new(tick_arrays.into(), whirlpool.tick_spacing)?;
+    let tick_sequence =
+        TickArraySequence::with_default_pubkeys(tick_arrays.into(), whirlpool.tick_spacing)?;
 
     let swap_result = compute_swap(
         token_in_after_fee.into(),
@@ -127,7 +128,8 @@ pub fn swap_quote_by_output_token(
     let token_out_before_fee =
         try_reverse_apply_transfer_fee(token_out, transfer_fee_out.unwrap_or_default())?;
 
-    let tick_sequence = TickArraySequence::new(tick_arrays.into(), whirlpool.tick_spacing)?;
+    let tick_sequence =
+        TickArraySequence::with_default_pubkeys(tick_arrays.into(), whirlpool.tick_spacing)?;
 
     let swap_result = compute_swap(
         token_out_before_fee.into(),

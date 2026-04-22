@@ -4,6 +4,8 @@ use crate::{
     TICK_INDEX_OUT_OF_BOUNDS, TICK_SEQUENCE_EMPTY,
 };
 
+pub use solana_program::pubkey::Pubkey;
+
 use super::{
     get_initializable_tick_index, get_next_initializable_tick_index,
     get_prev_initializable_tick_index,
@@ -11,13 +13,13 @@ use super::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TickArraySequence {
-    pub tick_arrays: Vec<Option<TickArrayFacade>>,
+    pub tick_arrays: Vec<Option<(Pubkey, TickArrayFacade)>>,
     pub tick_spacing: u16,
 }
 
 impl TickArraySequence {
     pub fn new(
-        tick_arrays: Vec<Option<TickArrayFacade>>,
+        tick_arrays: Vec<Option<(Pubkey, TickArrayFacade)>>,
         tick_spacing: u16,
     ) -> Result<Self, CoreError> {
         let mut tick_arrays = tick_arrays;
@@ -29,25 +31,41 @@ impl TickArraySequence {
         })
     }
 
+    /// Same validation as [`Self::new`], but each slot uses [`Pubkey::default()`] as the tick-array account address.
+    pub fn with_default_pubkeys(
+        tick_arrays: Vec<Option<TickArrayFacade>>,
+        tick_spacing: u16,
+    ) -> Result<Self, CoreError> {
+        Self::new(
+            tick_arrays
+                .into_iter()
+                .map(|o| o.map(|f| (Pubkey::default(), f)))
+                .collect(),
+            tick_spacing,
+        )
+    }
+
     /// Insert or replace tick arrays by `start_tick_index`, then sort and validate spacing (same rules as `new`).
     pub fn add_new_tick_arrays(
         &mut self,
-        new_arrays: impl IntoIterator<Item = TickArrayFacade>,
+        new_arrays: impl IntoIterator<Item = (Pubkey, TickArrayFacade)>,
     ) -> Result<(), CoreError> {
-        for facade in new_arrays {
+        for (pubkey, facade) in new_arrays {
             let start = facade.start_tick_index;
             let mut replaced = false;
             for slot in &mut self.tick_arrays {
-                if let Some(existing) = slot {
-                    if existing.start_tick_index == start {
-                        *existing = facade;
-                        replaced = true;
-                        break;
-                    }
+                let should_replace = matches!(
+                    slot,
+                    Some((_, existing)) if existing.start_tick_index == start
+                );
+                if should_replace {
+                    *slot = Some((pubkey, facade));
+                    replaced = true;
+                    break;
                 }
             }
             if !replaced {
-                self.tick_arrays.push(Some(facade));
+                self.tick_arrays.push(Some((pubkey, facade)));
             }
         }
         self.tick_arrays.sort_by_key(start_tick_index);
@@ -138,7 +156,7 @@ impl TickArraySequence {
 // internal functions
 
 fn validate_evenly_spaced_non_empty(
-    tick_arrays: &[Option<TickArrayFacade>],
+    tick_arrays: &[Option<(Pubkey, TickArrayFacade)>],
     tick_spacing: u16,
 ) -> Result<(), CoreError> {
     if tick_arrays.is_empty() || tick_arrays[0].is_none() {
@@ -158,16 +176,16 @@ fn validate_evenly_spaced_non_empty(
     Ok(())
 }
 
-fn start_tick_index(tick_array: &Option<TickArrayFacade>) -> i32 {
-    if let Some(tick_array) = tick_array {
+fn start_tick_index(tick_array: &Option<(Pubkey, TickArrayFacade)>) -> i32 {
+    if let Some((_, tick_array)) = tick_array {
         tick_array.start_tick_index
     } else {
         <i32>::MAX
     }
 }
 
-fn ticks(tick_array: &Option<TickArrayFacade>) -> &[TickFacade] {
-    if let Some(tick_array) = tick_array {
+fn ticks(tick_array: &Option<(Pubkey, TickArrayFacade)>) -> &[TickFacade] {
+    if let Some((_, tick_array)) = tick_array {
         &tick_array.ticks
     } else {
         &[]
@@ -178,6 +196,12 @@ fn ticks(tick_array: &Option<TickArrayFacade>) -> &[TickFacade] {
 mod tests {
     use super::*;
     use crate::get_tick_array_start_tick_index;
+
+    fn test_pubkey(i: u8) -> Pubkey {
+        let mut b = [0u8; 32];
+        b[0] = i;
+        Pubkey::new_from_array(b)
+    }
 
     fn test_tick(initialized: bool, liquidity_net: i128) -> TickFacade {
         TickFacade {
@@ -223,7 +247,17 @@ mod tests {
             start_tick_index,
             ticks,
         };
-        TickArraySequence::new(vec![Some(one), None, None, None, None], tick_spacing).unwrap()
+        TickArraySequence::new(
+            vec![
+                Some((test_pubkey(1), one)),
+                None,
+                None,
+                None,
+                None,
+            ],
+            tick_spacing,
+        )
+        .unwrap()
     }
 
     fn test_sequence(
@@ -243,7 +277,13 @@ mod tests {
             ticks,
         };
         TickArraySequence::new(
-            vec![Some(one), Some(two), Some(three), None, None],
+            vec![
+                Some((test_pubkey(1), one)),
+                Some((test_pubkey(2), two)),
+                Some((test_pubkey(3), three)),
+                None,
+                None,
+            ],
             tick_spacing,
         )
         .unwrap()
