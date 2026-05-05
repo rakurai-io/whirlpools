@@ -5,28 +5,45 @@ use crate::{
 };
 
 pub use solana_program::pubkey::Pubkey;
+use std::collections::{HashMap, HashSet};
 
 use super::{
     get_initializable_tick_index, get_next_initializable_tick_index,
-    get_prev_initializable_tick_index,
+    get_prev_initializable_tick_index, get_tick_array_start_tick_index,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TickArraySequence {
-    pub tick_arrays: Vec<Option<(Pubkey, TickArrayFacade)>>,
+    pub tick_arrays: HashMap<Pubkey, TickArrayFacade>,
+    pub current_tick_arrays: HashSet<i32>,
     pub tick_spacing: u16,
 }
 
 impl TickArraySequence {
     pub fn new(
-        tick_arrays: Vec<Option<(Pubkey, TickArrayFacade)>>,
+        tick_arrays: impl IntoIterator<Item = (Pubkey, TickArrayFacade)>,
         tick_spacing: u16,
     ) -> Result<Self, CoreError> {
-        let mut tick_arrays = tick_arrays;
-        tick_arrays.sort_by_key(start_tick_index);
-        validate_evenly_spaced_non_empty(&tick_arrays, tick_spacing)?;
+        let mut map = HashMap::new();
+        let mut start_indices = Vec::new();
+        
+        for (pubkey, facade) in tick_arrays {
+            start_indices.push(facade.start_tick_index);
+            map.insert(pubkey, facade);
+        }
+        
+        if map.is_empty() {
+            return Err(TICK_SEQUENCE_EMPTY);
+        }
+        
+        start_indices.sort_unstable();
+        validate_evenly_spaced(&start_indices, tick_spacing)?;
+        
+        let current_tick_arrays: HashSet<i32> = start_indices.into_iter().collect();
+        
         Ok(Self {
-            tick_arrays,
+            tick_arrays: map,
+            current_tick_arrays,
             tick_spacing,
         })
     }
@@ -36,13 +53,11 @@ impl TickArraySequence {
         tick_arrays: Vec<Option<TickArrayFacade>>,
         tick_spacing: u16,
     ) -> Result<Self, CoreError> {
-        Self::new(
-            tick_arrays
-                .into_iter()
-                .map(|o| o.map(|f| (Pubkey::default(), f)))
-                .collect(),
-            tick_spacing,
-        )
+        let tick_arrays_iter = tick_arrays
+            .into_iter()
+            .flatten()
+            .map(|f| (Pubkey::default(), f));
+        Self::new(tick_arrays_iter, tick_spacing)
     }
 
     /// Insert or replace tick arrays by `start_tick_index`, then sort and validate spacing (same rules as `new`).
@@ -51,43 +66,55 @@ impl TickArraySequence {
         new_arrays: impl IntoIterator<Item = (Pubkey, TickArrayFacade)>,
     ) -> Result<(), CoreError> {
         for (pubkey, facade) in new_arrays {
-            let start = facade.start_tick_index;
-            let mut replaced = false;
-            for slot in &mut self.tick_arrays {
-                let should_replace = matches!(
-                    slot,
-                    Some((_, existing)) if existing.start_tick_index == start
-                );
-                if should_replace {
-                    *slot = Some((pubkey, facade));
-                    replaced = true;
-                    break;
-                }
-            }
-            if !replaced {
-                self.tick_arrays.push(Some((pubkey, facade)));
-            }
+            let start_tick_index = facade.start_tick_index;
+            
+            // Remove old entry with same start_tick_index if it exists
+            self.tick_arrays.retain(|_, v| v.start_tick_index != start_tick_index);
+            
+            // Insert new entry
+            self.tick_arrays.insert(pubkey, facade);
+            self.current_tick_arrays.insert(start_tick_index);
         }
-        self.tick_arrays.sort_by_key(start_tick_index);
-        validate_evenly_spaced_non_empty(&self.tick_arrays, self.tick_spacing)
+        
+        // Validate spacing
+        let mut start_indices: Vec<i32> = self.current_tick_arrays.iter().copied().collect();
+        start_indices.sort_unstable();
+        validate_evenly_spaced(&start_indices, self.tick_spacing)?;
+        
+        Ok(())
     }
 
     /// Returns the first valid tick index in the sequence.
     pub fn start_index(&self) -> i32 {
-        start_tick_index(&self.tick_arrays[0]).max(MIN_TICK_INDEX)
+        self.current_tick_arrays
+            .iter()
+            .min()
+            .copied()
+            .unwrap_or(0)
+            .max(MIN_TICK_INDEX)
     }
 
     /// Returns the last valid tick index in the sequence.
     pub fn end_index(&self) -> i32 {
-        let mut last_valid_start_index = self.start_index();
-        for i in 0..self.tick_arrays.len() {
-            if start_tick_index(&self.tick_arrays[i]) != <i32>::MAX {
-                last_valid_start_index = start_tick_index(&self.tick_arrays[i]);
-            }
-        }
-        let end_index =
-            last_valid_start_index + TICK_ARRAY_SIZE as i32 * self.tick_spacing as i32 - 1;
+        let last_start_index = self.current_tick_arrays
+            .iter()
+            .max()
+            .copied()
+            .unwrap_or(0);
+        let end_index = last_start_index + TICK_ARRAY_SIZE as i32 * self.tick_spacing as i32 - 1;
         end_index.min(MAX_TICK_INDEX)
+    }
+
+    fn get_tick_array_for_tick(&self, tick_index: i32) -> Option<&TickArrayFacade> {
+        let tick_array_start_index = get_tick_array_start_tick_index(tick_index, self.tick_spacing);
+        
+        if !self.current_tick_arrays.contains(&tick_array_start_index) {
+            return None;
+        }
+        
+        self.tick_arrays
+            .values()
+            .find(|ta| ta.start_tick_index == tick_array_start_index)
     }
 
     pub fn tick(&self, tick_index: i32) -> Result<&TickFacade, CoreError> {
@@ -97,14 +124,12 @@ impl TickArraySequence {
         if (tick_index % self.tick_spacing as i32) != 0 {
             return Err(INVALID_TICK_INDEX);
         }
-        let first_index = start_tick_index(&self.tick_arrays[0]);
-        let tick_array_index = ((tick_index - first_index)
-            / (TICK_ARRAY_SIZE as i32 * self.tick_spacing as i32))
-            as usize;
-        let tick_array_start_index = start_tick_index(&self.tick_arrays[tick_array_index]);
-        let tick_array_ticks = ticks(&self.tick_arrays[tick_array_index]);
-        let index_in_array = (tick_index - tick_array_start_index) / self.tick_spacing as i32;
-        Ok(&tick_array_ticks[index_in_array as usize])
+        
+        let tick_array = self.get_tick_array_for_tick(tick_index)
+            .ok_or(INVALID_TICK_ARRAY_SEQUENCE)?;
+        
+        let index_in_array = (tick_index - tick_array.start_tick_index) / self.tick_spacing as i32;
+        Ok(&tick_array.ticks[index_in_array as usize])
     }
 
     pub fn next_initialized_tick(
@@ -155,41 +180,24 @@ impl TickArraySequence {
 
 // internal functions
 
-fn validate_evenly_spaced_non_empty(
-    tick_arrays: &[Option<(Pubkey, TickArrayFacade)>],
+fn validate_evenly_spaced(
+    start_indices: &[i32],
     tick_spacing: u16,
 ) -> Result<(), CoreError> {
-    if tick_arrays.is_empty() || tick_arrays[0].is_none() {
+    if start_indices.is_empty() {
         return Err(TICK_SEQUENCE_EMPTY);
     }
 
     let required_tick_array_spacing = TICK_ARRAY_SIZE as i32 * tick_spacing as i32;
-    for i in 0..tick_arrays.len() - 1 {
-        let current_start_tick_index = start_tick_index(&tick_arrays[i]);
-        let next_start_tick_index = start_tick_index(&tick_arrays[i + 1]);
-        if next_start_tick_index != <i32>::MAX
-            && next_start_tick_index - current_start_tick_index != required_tick_array_spacing
-        {
+    for i in 0..start_indices.len() - 1 {
+        let current = start_indices[i];
+        let next = start_indices[i + 1];
+        let actual_spacing = next - current;
+        if actual_spacing != required_tick_array_spacing {
             return Err(TICK_ARRAY_NOT_EVENLY_SPACED);
         }
     }
     Ok(())
-}
-
-fn start_tick_index(tick_array: &Option<(Pubkey, TickArrayFacade)>) -> i32 {
-    if let Some((_, tick_array)) = tick_array {
-        tick_array.start_tick_index
-    } else {
-        <i32>::MAX
-    }
-}
-
-fn ticks(tick_array: &Option<(Pubkey, TickArrayFacade)>) -> &[TickFacade] {
-    if let Some((_, tick_array)) = tick_array {
-        &tick_array.ticks
-    } else {
-        &[]
-    }
 }
 
 #[cfg(all(test, not(feature = "wasm")))]
@@ -248,13 +256,7 @@ mod tests {
             ticks,
         };
         TickArraySequence::new(
-            vec![
-                Some((test_pubkey(1), one)),
-                None,
-                None,
-                None,
-                None,
-            ],
+            vec![(test_pubkey(1), one)],
             tick_spacing,
         )
         .unwrap()
@@ -278,11 +280,9 @@ mod tests {
         };
         TickArraySequence::new(
             vec![
-                Some((test_pubkey(1), one)),
-                Some((test_pubkey(2), two)),
-                Some((test_pubkey(3), three)),
-                None,
-                None,
+                (test_pubkey(1), one),
+                (test_pubkey(2), two),
+                (test_pubkey(3), three),
             ],
             tick_spacing,
         )
