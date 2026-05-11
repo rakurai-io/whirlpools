@@ -14,9 +14,9 @@ use super::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TickArraySequence {
-    pub tick_arrays: HashMap<Pubkey, TickArrayFacade>,
-    pub current_tick_arrays: HashSet<i32>,
-    pub tick_spacing: u16,
+    tick_arrays: HashMap<Pubkey, TickArrayFacade>,
+    current_tick_arrays: HashSet<i32>,
+    tick_spacing: u16,
 }
 
 impl TickArraySequence {
@@ -48,7 +48,7 @@ impl TickArraySequence {
         })
     }
 
-    /// Same validation as [`Self::new`], but each slot uses [`Pubkey::default()`] as the tick-array account address.
+    /// Same validation as [`Self::new`], but generates unique pubkeys based on start_tick_index.
     pub fn with_default_pubkeys(
         tick_arrays: Vec<Option<TickArrayFacade>>,
         tick_spacing: u16,
@@ -56,7 +56,12 @@ impl TickArraySequence {
         let tick_arrays_iter = tick_arrays
             .into_iter()
             .flatten()
-            .map(|f| (Pubkey::default(), f));
+            .map(|f| {
+                // Generate unique pubkey based on start_tick_index to avoid HashMap collisions
+                let mut bytes = [0u8; 32];
+                bytes[0..4].copy_from_slice(&f.start_tick_index.to_le_bytes());
+                (Pubkey::new_from_array(bytes), f)
+            });
         Self::new(tick_arrays_iter, tick_spacing)
     }
 
@@ -175,6 +180,43 @@ impl TickArraySequence {
             }
             prev_index = get_prev_initializable_tick_index(prev_index, self.tick_spacing);
         }
+    }
+
+    /// Returns a reference to the tick array associated with the given pubkey.
+    pub fn get_tick_array(&self, pubkey: &Pubkey) -> Option<&TickArrayFacade> {
+        self.tick_arrays.get(pubkey)
+    }
+
+    /// Returns an iterator over all (Pubkey, TickArrayFacade) pairs in the sequence.
+    pub fn tick_arrays_iter(&self) -> impl Iterator<Item = (&Pubkey, &TickArrayFacade)> {
+        self.tick_arrays.iter()
+    }
+
+    /// Checks if a tick array with the given start index exists in the sequence.
+    pub fn contains_tick_array_at(&self, start_tick_index: i32) -> bool {
+        self.current_tick_arrays.contains(&start_tick_index)
+    }
+
+    /// Returns an iterator over all start tick indices in the sequence.
+    pub fn start_tick_indices(&self) -> impl Iterator<Item = &i32> {
+        self.current_tick_arrays.iter()
+    }
+
+    /// Returns an iterator over all tick array pubkeys in the sequence.
+    pub fn tick_array_pubkeys(&self) -> impl Iterator<Item = &Pubkey> {
+        self.tick_arrays.keys()
+    }
+
+    /// Returns a reference to the internal HashSet of current tick array start indices.
+    /// This is useful for checking which tick arrays are currently loaded.
+    pub fn current_tick_arrays(&self) -> &HashSet<i32> {
+        &self.current_tick_arrays
+    }
+
+    /// Returns a reference to the internal HashMap of tick arrays.
+    /// This is useful when you need direct access to the tick arrays by pubkey.
+    pub fn tick_arrays(&self) -> &HashMap<Pubkey, TickArrayFacade> {
+        &self.tick_arrays
     }
 }
 
