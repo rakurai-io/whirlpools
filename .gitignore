@@ -22,6 +22,7 @@ generated
 !.yarn/versions
 .nx
 generated
+!rust-sdk/client/src/generated
 .docusaurus
 .cache-loader
 .devcontainer

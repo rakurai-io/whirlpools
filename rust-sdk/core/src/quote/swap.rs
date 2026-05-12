@@ -18,8 +18,8 @@ use orca_whirlpools_macros::wasm_expose;
 /// # Arguments
 /// - `token_in`: The input token amount.
 /// - `specified_token_a`: If `true`, the input token is token A. Otherwise, it is token B.
-/// - `slippage_tolerance`: The slippage tolerance in basis points.
-/// - `whirlpool`: The whirlpool state.
+/// - `slippage_tolerance_bps`: The slippage tolerance in basis points.
+/// - `whirlpool`: The whirlpool state (sqrt price and liquidity are read from here).
 /// - `oracle`: The oracle data for the whirlpool.
 /// - `tick_arrays`: The tick arrays needed for the swap.
 /// - `timestamp`: The timestamp for the swap.
@@ -49,7 +49,8 @@ pub fn swap_quote_by_input_token(
     let token_in_after_fee =
         try_apply_transfer_fee(token_in.into(), transfer_fee_in.unwrap_or_default())?;
 
-    let tick_sequence = TickArraySequence::new(tick_arrays.into(), whirlpool.tick_spacing)?;
+    let tick_sequence =
+        TickArraySequence::with_default_pubkeys(tick_arrays.into(), whirlpool.tick_spacing)?;
 
     let swap_result = compute_swap(
         token_in_after_fee.into(),
@@ -86,6 +87,8 @@ pub fn swap_quote_by_input_token(
         trade_fee: swap_result.trade_fee,
         trade_fee_rate_min: swap_result.applied_fee_rate_min,
         trade_fee_rate_max: swap_result.applied_fee_rate_max,
+        next_sqrt_price: swap_result.next_sqrt_price,
+        next_liquidity: swap_result.next_liquidity,
     })
 }
 
@@ -94,8 +97,8 @@ pub fn swap_quote_by_input_token(
 /// # Arguments
 /// - `token_out`: The output token amount.
 /// - `specified_token_a`: If `true`, the output token is token A. Otherwise, it is token B.
-/// - `slippage_tolerance`: The slippage tolerance in basis points.
-/// - `whirlpool`: The whirlpool state.
+/// - `slippage_tolerance_bps`: The slippage tolerance in basis points.
+/// - `whirlpool`: The whirlpool state (sqrt price and liquidity are read from here).
 /// - `oracle`: The oracle data for the whirlpool.
 /// - `tick_arrays`: The tick arrays needed for the swap.
 /// - `timestamp`: The timestamp for the swap.
@@ -125,7 +128,8 @@ pub fn swap_quote_by_output_token(
     let token_out_before_fee =
         try_reverse_apply_transfer_fee(token_out, transfer_fee_out.unwrap_or_default())?;
 
-    let tick_sequence = TickArraySequence::new(tick_arrays.into(), whirlpool.tick_spacing)?;
+    let tick_sequence =
+        TickArraySequence::with_default_pubkeys(tick_arrays.into(), whirlpool.tick_spacing)?;
 
     let swap_result = compute_swap(
         token_out_before_fee.into(),
@@ -143,7 +147,7 @@ pub fn swap_quote_by_output_token(
     } else {
         (swap_result.token_b, swap_result.token_a)
     };
-
+    
     let token_out =
         try_apply_transfer_fee(token_out_before_fee, transfer_fee_out.unwrap_or_default())?;
 
@@ -162,6 +166,8 @@ pub fn swap_quote_by_output_token(
         trade_fee: swap_result.trade_fee,
         trade_fee_rate_min: swap_result.applied_fee_rate_min,
         trade_fee_rate_max: swap_result.applied_fee_rate_max,
+        next_sqrt_price: swap_result.next_sqrt_price,
+        next_liquidity: swap_result.next_liquidity,
     })
 }
 
@@ -171,6 +177,8 @@ pub struct SwapResult {
     pub trade_fee: u64,
     pub applied_fee_rate_min: u32,
     pub applied_fee_rate_max: u32,
+    pub next_sqrt_price: u128,
+    pub next_liquidity: u128,
 }
 
 /// Computes the amounts of tokens A and B based on the current Whirlpool state and tick sequence.
@@ -195,11 +203,11 @@ pub struct SwapResult {
 /// - This function doesn't take into account slippage tolerance.
 /// - This function doesn't take into account transfer fee extension.
 #[allow(clippy::too_many_arguments)]
-pub fn compute_swap<const SIZE: usize>(
+pub fn compute_swap(
     token_amount: u64,
     sqrt_price_limit: u128,
     whirlpool: WhirlpoolFacade,
-    tick_sequence: TickArraySequence<SIZE>,
+    tick_sequence: TickArraySequence,
     a_to_b: bool,
     specified_input: bool,
     timestamp: u64,
@@ -236,6 +244,8 @@ pub fn compute_swap<const SIZE: usize>(
     let mut current_liquidity = whirlpool.liquidity;
     let mut trade_fee = 0u64;
 
+    let mut next_liquidity = current_liquidity;
+
     let base_fee_rate = whirlpool.fee_rate;
     let mut applied_fee_rate_min: Option<u32> = None;
     let mut applied_fee_rate_max: Option<u32> = None;
@@ -252,7 +262,10 @@ pub fn compute_swap<const SIZE: usize>(
         &adaptive_fee_info,
     )?;
 
+    let mut outer_iteration = 0;
     while amount_remaining > 0 && sqrt_price_limit != current_sqrt_price {
+        outer_iteration += 1;
+        
         let (next_tick, next_tick_index) = if a_to_b {
             tick_sequence.prev_initialized_tick(current_tick_index)?
         } else {
@@ -265,7 +278,11 @@ pub fn compute_swap<const SIZE: usize>(
             next_tick_sqrt_price.min(sqrt_price_limit)
         };
 
+
+        let mut inner_iteration = 0;
         loop {
+            inner_iteration += 1;
+            
             fee_rate_manager.update_volatility_accumulator();
 
             let total_fee_rate = fee_rate_manager.get_total_fee_rate();
@@ -280,8 +297,10 @@ pub fn compute_swap<const SIZE: usize>(
                     .max(total_fee_rate),
             );
 
+
             let (bounded_sqrt_price_target, adaptive_fee_update_skipped) = fee_rate_manager
                 .get_bounded_sqrt_price_target(target_sqrt_price, current_liquidity);
+
 
             let step_quote = compute_swap_step(
                 amount_remaining,
@@ -292,6 +311,7 @@ pub fn compute_swap<const SIZE: usize>(
                 a_to_b,
                 specified_input,
             )?;
+
 
             trade_fee += step_quote.fee_amount;
 
@@ -315,13 +335,15 @@ pub fn compute_swap<const SIZE: usize>(
                     .ok_or(ARITHMETIC_OVERFLOW)?;
             }
 
+
             if step_quote.next_sqrt_price == next_tick_sqrt_price {
                 current_liquidity = get_next_liquidity(current_liquidity, next_tick, a_to_b);
+                next_liquidity = current_liquidity;
                 current_tick_index = if a_to_b {
                     next_tick_index - 1
                 } else {
                     next_tick_index
-                }
+                };
             } else if step_quote.next_sqrt_price != current_sqrt_price {
                 current_tick_index =
                     sqrt_price_to_tick_index(step_quote.next_sqrt_price.into()).into();
@@ -365,12 +387,15 @@ pub fn compute_swap<const SIZE: usize>(
         current_sqrt_price,
     );
 
+
     Ok(SwapResult {
         token_a,
         token_b,
         trade_fee,
         applied_fee_rate_min: applied_fee_rate_min.unwrap_or(base_fee_rate as u32),
         applied_fee_rate_max: applied_fee_rate_max.unwrap_or(base_fee_rate as u32),
+        next_sqrt_price: current_sqrt_price,
+        next_liquidity: next_liquidity,
     })
 }
 
