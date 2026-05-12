@@ -12,6 +12,8 @@ use super::{
     get_prev_initializable_tick_index, get_tick_array_start_tick_index,
 };
 
+pub const MAX_TICK_ARRAYS_QTY: u8 = 10; 
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TickArraySequence {
     tick_arrays: HashMap<Pubkey, TickArrayFacade>,
@@ -37,7 +39,7 @@ impl TickArraySequence {
         }
         
         start_indices.sort_unstable();
-        validate_evenly_spaced(&start_indices, tick_spacing)?;
+        Self::validate_evenly_spaced(&start_indices, tick_spacing)?;
         
         let current_tick_arrays: HashSet<i32> = start_indices.into_iter().collect();
         
@@ -66,6 +68,8 @@ impl TickArraySequence {
     }
 
     /// Insert or replace tick arrays by `start_tick_index`, then sort and validate spacing (same rules as `new`).
+    /// If the number of tick arrays exceeds MAX_TICK_ARRAYS_QTY, removes the most distant tick array
+    /// based on the direction of insertion.
     pub fn add_new_tick_arrays(
         &mut self,
         new_arrays: impl IntoIterator<Item = (Pubkey, TickArrayFacade)>,
@@ -73,18 +77,45 @@ impl TickArraySequence {
         for (pubkey, facade) in new_arrays {
             let start_tick_index = facade.start_tick_index;
             
-            // Remove old entry with same start_tick_index if it exists
-            self.tick_arrays.retain(|_, v| v.start_tick_index != start_tick_index);
+            // Check if tick array account already exists in the map
+            if let Some(existing_facade) = self.tick_arrays.get_mut(&pubkey) {
+                // Update existing entry directly
+                *existing_facade = facade;
+            } else {
+                // Check if we need to remove a tick array before inserting
+                if self.tick_arrays.len() >= MAX_TICK_ARRAYS_QTY as usize {
+                    // Get sorted current tick indices
+                    let mut sorted_indices: Vec<i32> = self.current_tick_arrays.iter().copied().collect();
+                    sorted_indices.sort_unstable();
+                    
+                    // Determine which tick array to remove based on insertion direction
+                    let tick_index_to_remove = if start_tick_index < sorted_indices[0] {
+                        // Inserting on the left side (smaller index), remove rightmost (largest)
+                        *sorted_indices.last().unwrap()
+                    } else {
+                        // Inserting on the right side (larger index), remove leftmost (smallest)
+                        sorted_indices[0]
+                    };
+                    
+                    // Find and remove the tick array with this start_tick_index
+                    self.tick_arrays.retain(|_, v| v.start_tick_index != tick_index_to_remove);
+                    self.current_tick_arrays.remove(&tick_index_to_remove);
+                }
+                
+                // Insert new entry 
+                self.tick_arrays.insert(pubkey, facade);
+            }
             
-            // Insert new entry
-            self.tick_arrays.insert(pubkey, facade);
-            self.current_tick_arrays.insert(start_tick_index);
+            // Only insert start_tick_index if not already present
+            if !self.current_tick_arrays.contains(&start_tick_index) {
+                self.current_tick_arrays.insert(start_tick_index);
+            }
         }
         
         // Validate spacing
         let mut start_indices: Vec<i32> = self.current_tick_arrays.iter().copied().collect();
         start_indices.sort_unstable();
-        validate_evenly_spaced(&start_indices, self.tick_spacing)?;
+        Self::validate_evenly_spaced(&start_indices, self.tick_spacing)?;
         
         Ok(())
     }
@@ -218,28 +249,27 @@ impl TickArraySequence {
     pub fn tick_arrays(&self) -> &HashMap<Pubkey, TickArrayFacade> {
         &self.tick_arrays
     }
-}
 
-// internal functions
-
-fn validate_evenly_spaced(
-    start_indices: &[i32],
-    tick_spacing: u16,
-) -> Result<(), CoreError> {
-    if start_indices.is_empty() {
-        return Err(TICK_SEQUENCE_EMPTY);
-    }
-
-    let required_tick_array_spacing = TICK_ARRAY_SIZE as i32 * tick_spacing as i32;
-    for i in 0..start_indices.len() - 1 {
-        let current = start_indices[i];
-        let next = start_indices[i + 1];
-        let actual_spacing = next - current;
-        if actual_spacing != required_tick_array_spacing {
-            return Err(TICK_ARRAY_NOT_EVENLY_SPACED);
+    pub fn validate_evenly_spaced(
+        start_indices: &[i32],
+        tick_spacing: u16,
+    ) -> Result<(), CoreError> {
+        if start_indices.is_empty() {
+            return Err(TICK_SEQUENCE_EMPTY);
         }
+    
+        let required_tick_array_spacing = TICK_ARRAY_SIZE as i32 * tick_spacing as i32;
+        for i in 0..start_indices.len() - 1 {
+            let current = start_indices[i];
+            let next = start_indices[i + 1];
+            let actual_spacing = next - current;
+            if actual_spacing != required_tick_array_spacing {
+                return Err(TICK_ARRAY_NOT_EVENLY_SPACED);
+            }
+        }
+        Ok(())
     }
-    Ok(())
+    
 }
 
 #[cfg(all(test, not(feature = "wasm")))]
